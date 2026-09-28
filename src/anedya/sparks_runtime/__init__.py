@@ -6,7 +6,7 @@ Python SDK for the Anedya Sparks Lambda service.
 
 Quickstart::
 
-    import anedya_sparks as sparks
+    import anedya.sparks_runtime as sparks
 
     @sparks.handler
     def my_handler(event: sparks.Event) -> bytes:
@@ -30,10 +30,10 @@ import os
 import sys
 from typing import Any, Callable, Optional, Union
 
-from anedya_sparks._client import SparksClient
-from anedya_sparks._event import Event
-from anedya_sparks._loop import run_loop
-from anedya_sparks._exceptions import (
+from ._client import SparksClient
+from ._event import Event
+from ._loop import run_loop
+from ._exceptions import (
     SparksError,
     SparksConnectionError,
     SparksHandlerError,

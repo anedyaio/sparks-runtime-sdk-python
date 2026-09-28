@@ -1,22 +1,39 @@
 [project]
-name = "sparks-runtime-sdk-python"
-version = "0.1.0"
-description = "Python Runtime SDK for Anedya Sparks functions"
+name = "anedya-sparks-runtime"
+version = "0.0.1"
+description = "Anedya Sparks python runtime SDK"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.13"
+license = "Apache-2.0"
+authors = [
+    { name = "Anedya Systems", email = "support@anedya.io" },
+]
+keywords = ["sparks", "runtime", "sdk", "grpc", "cbor"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "cbor2>=5.6.0",
     "grpcio>=1.54.0",
     "protobuf>=4.21.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/anedyaio/sparks-runtime-sdk-python"
+Repository = "https://github.com/anedyaio/sparks-runtime-sdk-python"
+Issues = "https://github.com/anedyaio/sparks-runtime-sdk-python/issues"
+Documentation = "https://docs.anedya.io"
+
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["anedya_sparks", "anedya_sparks.proto"]
-
-[tool.setuptools.package-dir]
-anedya_sparks = "."
-"anedya_sparks.proto" = "proto"
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["anedya.sparks_runtime*"]
+namespaces = true

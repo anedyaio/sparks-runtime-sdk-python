@@ -23,8 +23,8 @@ from typing import Optional, Union
 
 import grpc
 
-from anedya_sparks.proto import sparks_pb2, sparks_pb2_grpc
-from anedya_sparks._exceptions import SparksConfigError, SparksConnectionError
+from .proto import sparks_pb2, sparks_pb2_grpc
+from ._exceptions import SparksConfigError, SparksConnectionError
 
 logger = logging.getLogger("anedya.sparks.client")
 

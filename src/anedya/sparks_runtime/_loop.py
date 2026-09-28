@@ -22,9 +22,9 @@ import sys
 import traceback
 from typing import Any, Callable
 
-from anedya_sparks._client import SparksClient
-from anedya_sparks._event import Event
-from anedya_sparks._exceptions import SparksConnectionError
+from ._client import SparksClient
+from ._event import Event
+from ._exceptions import SparksConnectionError
 
 logger = logging.getLogger("anedya.sparks.loop")
 
