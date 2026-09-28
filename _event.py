@@ -12,19 +12,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Union
 
-try:
-    import cbor2
-except ImportError:
-    try:
-        from anedya_sparks import _cbor as cbor2
-    except ImportError:
-        try:
-            from . import _cbor as cbor2
-        except ImportError:
-            try:
-                import _cbor as cbor2
-            except ImportError:
-                cbor2 = None
+import cbor2
 
 logger = logging.getLogger("anedya.sparks.event")
 
@@ -93,7 +81,7 @@ class Event:
         if isinstance(self.payload, (dict, list, int, float, bool)) and not isinstance(self.payload, (bytes, bytearray)):
             return self.payload
         raw = self.raw_payload if self.raw_payload else self.payload
-        if cbor2 is not None and isinstance(raw, (bytes, bytearray)) and raw:
+        if isinstance(raw, (bytes, bytearray)) and raw:
             try:
                 return cbor2.loads(raw)
             except Exception:

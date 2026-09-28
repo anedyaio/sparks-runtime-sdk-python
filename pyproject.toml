@@ -1,11 +1,22 @@
 [project]
 name = "sparks-runtime-sdk-python"
 version = "0.1.0"
-description = "Add your description here"
+description = "Python Runtime SDK for Anedya Sparks functions"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.9"
 dependencies = [
     "cbor2>=5.6.0",
     "grpcio>=1.54.0",
     "protobuf>=4.21.0",
 ]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["anedya_sparks", "anedya_sparks.proto"]
+
+[tool.setuptools.package-dir]
+anedya_sparks = "."
+"anedya_sparks.proto" = "proto"
