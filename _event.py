@@ -12,6 +12,20 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Union
 
+try:
+    import cbor2
+except ImportError:
+    try:
+        from anedya_sparks import _cbor as cbor2
+    except ImportError:
+        try:
+            from . import _cbor as cbor2
+        except ImportError:
+            try:
+                import _cbor as cbor2
+            except ImportError:
+                cbor2 = None
+
 logger = logging.getLogger("anedya.sparks.event")
 
 
@@ -26,8 +40,9 @@ class Event:
         trigger_type: Type of trigger initiating the function (alias: triggerType).
         timestamp:    Epoch timestamp when the event was generated (or timestamp string).
         context:      Contextual metadata about the execution environment.
-        payload:      Invocation payload (bytes, str, dict, or Any).
-        trigger_data: Map containing trigger-specific metadata (alias: triggerData / triggerdata).
+        payload:      Invocation payload, decoded from CBOR bytes (or raw bytes/str/dict).
+        trigger_data: Map containing trigger-specific metadata, decoded from CBOR bytes (alias: triggerData / triggerdata).
+        raw_payload:  Raw unparsed payload bytes as received from runtime.
     """
 
     request_id: str = ""
@@ -37,6 +52,7 @@ class Event:
     context: Dict[str, Any] = field(default_factory=dict)
     payload: Union[bytes, str, Dict[str, Any], Any] = b""
     trigger_data: Dict[str, Any] = field(default_factory=dict)
+    raw_payload: bytes = b""
 
     # ── Property aliases for camelCase compatibility ──────────────────────────
 
@@ -67,6 +83,23 @@ class Event:
 
     # ── Helper methods ─────────────────────────────────────────────────────────
 
+    def cbor_payload(self) -> Any:
+        """
+        Parse and return the payload as decoded CBOR.
+
+        If payload is already decoded (dict/list/primitive), returns it as-is.
+        If raw_payload or payload is bytes/bytearray, decodes with cbor2.loads().
+        """
+        if isinstance(self.payload, (dict, list, int, float, bool)) and not isinstance(self.payload, (bytes, bytearray)):
+            return self.payload
+        raw = self.raw_payload if self.raw_payload else self.payload
+        if cbor2 is not None and isinstance(raw, (bytes, bytearray)) and raw:
+            try:
+                return cbor2.loads(raw)
+            except Exception:
+                pass
+        return self.payload
+
     def json_payload(self) -> Any:
         """
         Parse and return the payload as JSON.
@@ -74,7 +107,7 @@ class Event:
         If payload is already a dict/list/primitive, returns it as-is.
         If payload is bytes or str, parses it with json.loads().
         """
-        if isinstance(self.payload, (dict, list, int, float, bool)) or self.payload is None:
+        if isinstance(self.payload, (dict, list, int, float, bool)) and not isinstance(self.payload, (bytes, bytearray)):
             return self.payload
         if isinstance(self.payload, (bytes, bytearray)):
             return json.loads(self.payload.decode("utf-8"))
@@ -86,8 +119,9 @@ class Event:
         """
         Return the payload decoded as a text string.
         """
-        if isinstance(self.payload, (bytes, bytearray)):
-            return self.payload.decode(encoding, errors=errors)
+        raw = self.raw_payload if self.raw_payload else self.payload
+        if isinstance(raw, (bytes, bytearray)):
+            return raw.decode(encoding, errors=errors)
         return str(self.payload)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -108,6 +142,7 @@ class Event:
     def from_proto(cls, response: Any) -> Event:
         """
         Construct an Event instance directly from a NextInvocationResponse protobuf message.
+        Decodes CBOR-encoded payload and trigger_data.
         """
         task_id = getattr(response, "taskId", "")
         request_id = getattr(response, "request_id", "") or task_id
@@ -132,10 +167,14 @@ class Event:
             context = raw_context
         elif isinstance(raw_context, (bytes, bytearray)) and raw_context:
             try:
-                parsed_ctx = json.loads(raw_context.decode("utf-8"))
+                parsed_ctx = cbor2.loads(raw_context)
                 context = parsed_ctx if isinstance(parsed_ctx, dict) else {"data": parsed_ctx}
-            except (ValueError, UnicodeDecodeError):
-                context = {"data": raw_context}
+            except Exception:
+                try:
+                    parsed_ctx = json.loads(raw_context.decode("utf-8"))
+                    context = parsed_ctx if isinstance(parsed_ctx, dict) else {"data": parsed_ctx}
+                except (ValueError, UnicodeDecodeError):
+                    context = {"data": raw_context}
         elif isinstance(raw_context, str) and raw_context.strip():
             try:
                 parsed_ctx = json.loads(raw_context)
@@ -143,19 +182,33 @@ class Event:
             except (ValueError, UnicodeDecodeError):
                 context = {"data": raw_context}
 
-        payload: bytes = getattr(response, "payload", b"")
+        # Parse payload (stored as bytes in protobuf, encoded in CBOR)
+        raw_payload = getattr(response, "payload", b"")
+        payload: Any = raw_payload
+        if isinstance(raw_payload, (bytes, bytearray)) and raw_payload:
+            try:
+                payload = cbor2.loads(raw_payload)
+            except Exception:
+                try:
+                    payload = json.loads(raw_payload.decode("utf-8"))
+                except Exception:
+                    payload = raw_payload
 
-        # Parse trigger_data (stored as bytes in protobuf)
+        # Parse trigger_data (stored as bytes in protobuf, encoded in CBOR)
         raw_trigger_data = getattr(response, "trigger_data", b"")
         trigger_data: Dict[str, Any] = {}
         if isinstance(raw_trigger_data, dict):
             trigger_data = raw_trigger_data
         elif isinstance(raw_trigger_data, (bytes, bytearray)) and raw_trigger_data:
             try:
-                parsed_td = json.loads(raw_trigger_data.decode("utf-8"))
+                parsed_td = cbor2.loads(raw_trigger_data)
                 trigger_data = parsed_td if isinstance(parsed_td, dict) else {"data": parsed_td}
-            except (ValueError, UnicodeDecodeError):
-                trigger_data = {"raw": raw_trigger_data}
+            except Exception:
+                try:
+                    parsed_td = json.loads(raw_trigger_data.decode("utf-8"))
+                    trigger_data = parsed_td if isinstance(parsed_td, dict) else {"data": parsed_td}
+                except (ValueError, UnicodeDecodeError):
+                    trigger_data = {"raw": raw_trigger_data}
         elif isinstance(raw_trigger_data, str) and raw_trigger_data.strip():
             try:
                 parsed_td = json.loads(raw_trigger_data)
@@ -171,6 +224,7 @@ class Event:
             context=context,
             payload=payload,
             trigger_data=trigger_data,
+            raw_payload=raw_payload if isinstance(raw_payload, (bytes, bytearray)) else b"",
         )
 
     @classmethod
@@ -203,16 +257,30 @@ class Event:
         elif not isinstance(context, dict):
             context = {"data": context}
 
-        payload = data.get("payload", b"")
+        raw_payload = data.get("payload", b"")
+        payload = raw_payload
+        if isinstance(raw_payload, (bytes, bytearray)) and raw_payload:
+            try:
+                payload = cbor2.loads(raw_payload)
+            except Exception:
+                pass
 
-        trigger_data = (
+        raw_td = (
             data.get("triggerData")
             or data.get("triggerdata")
             or data.get("trigger_data")
             or {}
         )
-        if not isinstance(trigger_data, dict):
-            trigger_data = {"data": trigger_data}
+        if isinstance(raw_td, (bytes, bytearray)) and raw_td:
+            try:
+                parsed_td = cbor2.loads(raw_td)
+                trigger_data = parsed_td if isinstance(parsed_td, dict) else {"data": parsed_td}
+            except Exception:
+                trigger_data = {"raw": raw_td}
+        elif isinstance(raw_td, dict):
+            trigger_data = raw_td
+        else:
+            trigger_data = {"data": raw_td}
 
         return cls(
             request_id=str(request_id),
@@ -222,6 +290,7 @@ class Event:
             context=context,
             payload=payload,
             trigger_data=trigger_data,
+            raw_payload=raw_payload if isinstance(raw_payload, (bytes, bytearray)) else b"",
         )
 
     @classmethod
@@ -244,12 +313,12 @@ class Event:
 
         task_id = str(invocation_or_task_id)
         if not raw_payload:
-            return cls(request_id=task_id, payload=b"")
+            return cls(request_id=task_id, payload=b"", raw_payload=b"")
 
+        # 1. Try CBOR decode
         try:
-            parsed = json.loads(raw_payload.decode("utf-8"))
+            parsed = cbor2.loads(raw_payload)
             if isinstance(parsed, dict):
-                # Check if it looks like an Event envelope
                 has_envelope_keys = any(
                     k in parsed
                     for k in (
@@ -266,18 +335,45 @@ class Event:
                 )
                 if has_envelope_keys:
                     return cls.from_dict(parsed, task_id=task_id)
+            return cls(
+                request_id=task_id,
+                payload=parsed,
+                raw_payload=raw_payload,
+            )
+        except Exception:
+            pass
 
-                # If it's a generic JSON dict without event envelope keys,
-                # wrap it as payload
+        # 2. Try JSON decode fallback
+        try:
+            parsed = json.loads(raw_payload.decode("utf-8"))
+            if isinstance(parsed, dict):
+                has_envelope_keys = any(
+                    k in parsed
+                    for k in (
+                        "requestId",
+                        "request_id",
+                        "eventId",
+                        "event_id",
+                        "triggerType",
+                        "trigger_type",
+                        "triggerData",
+                        "triggerdata",
+                        "trigger_data",
+                    )
+                )
+                if has_envelope_keys:
+                    return cls.from_dict(parsed, task_id=task_id)
                 return cls(
                     request_id=task_id,
                     payload=parsed,
+                    raw_payload=raw_payload,
                 )
         except (ValueError, UnicodeDecodeError):
             pass
 
-        # Fallback to raw bytes payload
+        # 3. Fallback to raw bytes payload
         return cls(
             request_id=task_id,
             payload=raw_payload,
+            raw_payload=raw_payload,
         )
