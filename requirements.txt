@@ -1,3 +1,0 @@
-grpcio>=1.54.0
-protobuf>=4.21.0
-cbor2>=5.6.0

@@ -9,10 +9,11 @@ Quickstart::
     import anedya.sparks_runtime as sparks
 
     @sparks.handler
-    def my_handler(event: sparks.Event) -> bytes:
-        # event contains requestId, eventId, triggerType, timestamp, context, payload, triggerData
-        # Return bytes (or str / None) as the task result.
-        return b"Hello from Sparks!"
+    def my_handler(invocation: sparks.SparkInvocation) -> sparks.SparkResponse:
+        return sparks.SparkResponse(
+            status_code=sparks.StatusCode.OK,
+            payload=b"Hello from Sparks!",
+        )
 
     sparks.run()
 
@@ -28,47 +29,54 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from typing import Any, Callable, Optional, Union
+from collections.abc import Callable
 
 from ._client import SparksClient
-from ._event import Event
-from ._loop import run_loop
 from ._exceptions import (
-    SparksError,
-    SparksConnectionError,
-    SparksHandlerError,
     SparksConfigError,
+    SparksConnectionError,
+    SparksError,
+    SparksHandlerError,
 )
+from ._loop import run_loop
+from ._spark_invocation import SparkInvocation
+from ._spark_response import SparkResponse, StatusCode
 
 __all__ = [
-    "Event",
+    "SparkInvocation",
+    "SparkResponse",
+    "SparksConfigError",
+    "SparksConnectionError",
+    "SparksError",
+    "SparksHandlerError",
+    "StatusCode",
     "handler",
     "run",
-    "SparksError",
-    "SparksConnectionError",
-    "SparksHandlerError",
-    "SparksConfigError",
 ]
 
 __version__ = "0.1.0"
 
 logger = logging.getLogger("anedya.sparks")
+logging.getLogger("anedya").addHandler(logging.NullHandler())
+logging.getLogger("anedya").propagate = False
 
 # ── Internal state ─────────────────────────────────────────────────────────────
 
-_registered_handler: Optional[Callable[[Event], Any]] = None
+_registered_handler: Callable[[SparkInvocation], SparkResponse] | None = None
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 
-def handler(fn: Callable[[Event], Any]) -> Callable[[Event], Any]:
+def handler(
+    fn: Callable[[SparkInvocation], SparkResponse],
+) -> Callable[[SparkInvocation], SparkResponse]:
     """
     Decorator to register a function as the Sparks Lambda handler.
 
-    The function receives a single argument: an ``Event`` instance containing
-    invocation metadata (requestId, eventId, triggerType, timestamp, context,
-    payload, triggerData). It should return ``bytes``, ``str``, or ``None``.
+    The function receives a single argument: a ``SparkInvocation`` instance containing
+    invocation metadata (function_id, task_id, trigger_id, event_type, timestamp,
+    payload). It must return a ``SparkResponse`` instance.
 
     Only **one** handler can be registered per process. Decorating a second
     function raises ``RuntimeError``.
@@ -76,14 +84,15 @@ def handler(fn: Callable[[Event], Any]) -> Callable[[Event], Any]:
     Example::
 
         @sparks.handler
-        def my_handler(event: sparks.Event) -> bytes:
-            print(f"Request ID: {event.request_id}")
-            print(f"Trigger Type: {event.trigger_type}")
-            payload_data = event.json_payload()
-            result = {"echo": payload_data}
-            return json.dumps(result).encode()
+        def my_handler(invocation: sparks.SparkInvocation) -> sparks.SparkResponse:
+            print(f"Task ID: {invocation.task_id}")
+            payload_data = invocation.cbor_payload()
+            return sparks.SparkResponse(
+                status_code=sparks.StatusCode.OK,
+                payload=b"OK",
+            )
     """
-    global _registered_handler  # noqa: PLW0603
+    global _registered_handler
 
     if _registered_handler is not None:
         raise RuntimeError(
@@ -96,7 +105,7 @@ def handler(fn: Callable[[Event], Any]) -> Callable[[Event], Any]:
     return fn
 
 
-def _validate_env(endpoint: Optional[str] = None, host: Optional[str] = None) -> None:
+def _validate_env(endpoint: str | None = None, host: str | None = None) -> None:
     """Validate that all required environment variables / configs are present."""
     has_endpoint = bool(
         endpoint
@@ -124,11 +133,37 @@ def _validate_env(endpoint: Optional[str] = None, host: Optional[str] = None) ->
         )
 
 
+def _setup_logging() -> None:
+    """
+    Ensure internal SDK loggers do not leak to stdout/stderr or Docker FIFO pipe.
+    Only the user's registered handler output (print/logging) is emitted to the FIFO pipe.
+    """
+    sparks_logger = logging.getLogger("anedya")
+    sparks_logger.handlers.clear()
+    sparks_logger.addHandler(logging.NullHandler())
+
+    # Only enable internal SDK console logging if explicitly requested via environment variable
+    if os.environ.get("ANEDYA_ENABLE_INTERNAL_LOGS", "").lower() in ("true", "1", "yes"):
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(
+            logging.Formatter(
+                fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
+        sparks_logger.addHandler(handler)
+        sparks_logger.setLevel(logging.INFO)
+        sparks_logger.propagate = False
+    else:
+        # Prevent propagation to root logger which could print to stdout/stderr
+        sparks_logger.propagate = False
+
+
 def run(
-    endpoint: Optional[str] = None,
-    host: Optional[str] = None,
-    port: Optional[int] = None,
-    use_tls: Optional[bool] = None,
+    endpoint: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    use_tls: bool | None = None,
 ) -> None:
     """
     Start the Sparks runtime loop.
@@ -144,6 +179,9 @@ def run(
         port:     Override port.
         use_tls:  Override ``ANEDYA_SPARK_USE_TLS`` env var.
     """
+    # 0. Configure default console logging
+    _setup_logging()
+
     # 1. Validate required environment variables first
     _validate_env(endpoint=endpoint, host=host)
 
