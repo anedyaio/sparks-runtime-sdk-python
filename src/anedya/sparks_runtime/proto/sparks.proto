@@ -5,36 +5,29 @@ option go_package = "./proto";
 // ─── NextInvocation ───────────────────────────────────────────────────────────
 
 message NextInvocationRequest {
-    string instanceId = 1;
-    bytes authToken = 2;
+    bytes instance_id = 1;
+    bytes auth_token = 2;
 }
 
 message NextInvocationResponse {
-    string taskId = 1;
-    string request_id = 2;
-    string trigger_type = 3;
-    string timestamp = 4;
-    bytes context = 5;
+    bytes function_id = 1;
+    bytes task_id = 2;
+    bytes trigger_id = 3;
+    string event_type = 4;
+    int64 timestamp = 5;
     bytes payload = 6;
-    bytes trigger_data = 7;
 }
 
-// ─── TaskResponse ─────────────────────────────────────────────────────────────
-
 message TaskResponseRequest {
-    string taskId = 1;
-    string request_id = 2;
-    string event_id = 3;
-    string InstanceId = 4;
-    bytes authToken = 5;
+    bytes task_id = 1;
+    bytes instance_id = 4;
+    bytes auth_token = 5;
     bytes payload = 6;
 }
 
 message TaskResponseResponse {}
 
-// ─── Service ──────────────────────────────────────────────────────────────────
-
-service ContainerAPI {
-    rpc NextInvocation (NextInvocationRequest) returns (NextInvocationResponse) {}
-    rpc TaskResponse   (TaskResponseRequest)   returns (TaskResponseResponse)   {}
+service ContainerAPIService {
+    rpc NextInvocation(NextInvocationRequest) returns (NextInvocationResponse) {}
+    rpc TaskResponse(TaskResponseRequest) returns (TaskResponseResponse) {}
 }

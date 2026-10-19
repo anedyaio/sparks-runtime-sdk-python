@@ -3,9 +3,12 @@
 import grpc
 import warnings
 
-from . import sparks_pb2 as sparks__pb2
+try:
+    from . import sparks_pb2 as sparks__pb2
+except ImportError:
+    import sparks_pb2 as sparks__pb2
 
-GRPC_GENERATED_VERSION = '1.54.0'
+GRPC_GENERATED_VERSION = '1.84.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -16,18 +19,17 @@ except ImportError:
     _version_not_supported = True
 
 if _version_not_supported:
-    warnings.warn(
+    raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in sparks_pb2_grpc.py depends on'
+        + ' but the generated code in sparks_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
-        + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.',
-        RuntimeWarning
+        + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
 
 
-class ContainerAPIStub(object):
-    """ContainerAPI gRPC service stub (client side)."""
+class ContainerAPIServiceStub:
+    """Missing associated documentation comment in .proto file."""
 
     def __init__(self, channel):
         """Constructor.
@@ -36,28 +38,19 @@ class ContainerAPIStub(object):
             channel: A grpc.Channel.
         """
         self.NextInvocation = channel.unary_unary(
-            '/ContainerAPI/NextInvocation',
-            request_serializer=sparks__pb2.NextInvocationRequest.SerializeToString,
-            response_deserializer=sparks__pb2.NextInvocationResponse.FromString,
-            _registered_method=True,
-        )
+                '/ContainerAPIService/NextInvocation',
+                request_serializer=sparks__pb2.NextInvocationRequest.SerializeToString,
+                response_deserializer=sparks__pb2.NextInvocationResponse.FromString,
+                _registered_method=True)
         self.TaskResponse = channel.unary_unary(
-            '/ContainerAPI/TaskResponse',
-            request_serializer=sparks__pb2.TaskResponseRequest.SerializeToString,
-            response_deserializer=sparks__pb2.TaskResponseResponse.FromString,
-            _registered_method=True,
-        )
-        # TODO: TaskError stub — add once the RPC is defined in sparks.proto
-        # self.TaskError = channel.unary_unary(
-        #     '/ContainerAPI/TaskError',
-        #     request_serializer=sparks__pb2.TaskErrorRequest.SerializeToString,
-        #     response_deserializer=sparks__pb2.TaskErrorResponse.FromString,
-        #     _registered_method=True,
-        # )
+                '/ContainerAPIService/TaskResponse',
+                request_serializer=sparks__pb2.TaskResponseRequest.SerializeToString,
+                response_deserializer=sparks__pb2.TaskResponseResponse.FromString,
+                _registered_method=True)
 
 
-class ContainerAPIServicer(object):
-    """ContainerAPI gRPC service servicer (server side — for testing only)."""
+class ContainerAPIServiceServicer:
+    """Missing associated documentation comment in .proto file."""
 
     def NextInvocation(self, request, context):
         """Missing associated documentation comment in .proto file."""
@@ -71,53 +64,45 @@ class ContainerAPIServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    # TODO: TaskError servicer method
-    # def TaskError(self, request, context):
-    #     context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-    #     context.set_details('Method not implemented!')
-    #     raise NotImplementedError('Method not implemented!')
 
-
-def add_ContainerAPIServicer_to_server(servicer, server):
-    from grpc import experimental
+def add_ContainerAPIServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-        'NextInvocation': grpc.unary_unary_rpc_method_handler(
-            servicer.NextInvocation,
-            request_deserializer=sparks__pb2.NextInvocationRequest.FromString,
-            response_serializer=sparks__pb2.NextInvocationResponse.SerializeToString,
-        ),
-        'TaskResponse': grpc.unary_unary_rpc_method_handler(
-            servicer.TaskResponse,
-            request_deserializer=sparks__pb2.TaskResponseRequest.FromString,
-            response_serializer=sparks__pb2.TaskResponseResponse.SerializeToString,
-        ),
-        # TODO: TaskError handler — add once the RPC is defined
+            'NextInvocation': grpc.unary_unary_rpc_method_handler(
+                    servicer.NextInvocation,
+                    request_deserializer=sparks__pb2.NextInvocationRequest.FromString,
+                    response_serializer=sparks__pb2.NextInvocationResponse.SerializeToString,
+            ),
+            'TaskResponse': grpc.unary_unary_rpc_method_handler(
+                    servicer.TaskResponse,
+                    request_deserializer=sparks__pb2.TaskResponseRequest.FromString,
+                    response_serializer=sparks__pb2.TaskResponseResponse.SerializeToString,
+            ),
     }
-    generic_handler = grpc.method_service_handler('ContainerAPI', rpc_method_handlers)
+    generic_handler = grpc.method_handlers_generic_handler(
+            'ContainerAPIService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('ContainerAPI', rpc_method_handlers)
+    server.add_registered_method_handlers('ContainerAPIService', rpc_method_handlers)
 
 
-class ContainerAPI(object):
-    """ContainerAPI gRPC service definition (for experimental API)."""
+ # This class is part of an EXPERIMENTAL API.
+class ContainerAPIService:
+    """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def NextInvocation(
-        request,
-        target,
-        options=(),
-        channel_credentials=None,
-        call_credentials=None,
-        insecure=False,
-        compression=None,
-        wait_for_ready=None,
-        timeout=None,
-        metadata=None,
-    ):
+    def NextInvocation(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ContainerAPI/NextInvocation',
+            '/ContainerAPIService/NextInvocation',
             sparks__pb2.NextInvocationRequest.SerializeToString,
             sparks__pb2.NextInvocationResponse.FromString,
             options,
@@ -128,26 +113,23 @@ class ContainerAPI(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True,
-        )
+            _registered_method=True)
 
     @staticmethod
-    def TaskResponse(
-        request,
-        target,
-        options=(),
-        channel_credentials=None,
-        call_credentials=None,
-        insecure=False,
-        compression=None,
-        wait_for_ready=None,
-        timeout=None,
-        metadata=None,
-    ):
+    def TaskResponse(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/ContainerAPI/TaskResponse',
+            '/ContainerAPIService/TaskResponse',
             sparks__pb2.TaskResponseRequest.SerializeToString,
             sparks__pb2.TaskResponseResponse.FromString,
             options,
@@ -158,5 +140,4 @@ class ContainerAPI(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True,
-        )
+            _registered_method=True)
