@@ -8,9 +8,7 @@ Lifecycle:
   1. Connect to the gRPC runtime.
   2. Call NextInvocation (blocking) — wait for a task.
   3. Call the registered user handler with the raw payload bytes.
-  4a. If the handler returns successfully → call send_response().
-  4b. If the handler raises an exception → log it and call send_error()
-      (TODO: send_error is not yet wired to an RPC — logs only for now).
+  4. If the handler returns successfully → call send_response().
   5. Repeat from step 2.
   6. On SIGTERM → finish the current invocation, then exit(0) cleanly.
   7. On gRPC error → log CRITICAL and exit(1) (no reconnect).
@@ -20,11 +18,12 @@ import logging
 import signal
 import sys
 import traceback
-from typing import Any, Callable
+from collections.abc import Callable
 
 from ._client import SparksClient
-from ._event import Event
 from ._exceptions import SparksConnectionError
+from ._spark_invocation import SparkInvocation
+from ._spark_response import SparkResponse, StatusCode
 
 logger = logging.getLogger("anedya.sparks.loop")
 
@@ -35,21 +34,21 @@ class _ShutdownFlag:
     def __init__(self) -> None:
         self.requested = False
 
-    def request(self, signum, frame) -> None:  # noqa: ANN001
+    def request(self, signum, frame) -> None:
         logger.info("SIGTERM received — will shut down after the current invocation.")
         self.requested = True
 
 
 def run_loop(
-    handler: Callable[[Event], Any],
+    handler: Callable[[SparkInvocation], SparkResponse],
     client: SparksClient,
 ) -> None:
     """
     Start the main poll → execute → respond loop.
 
     Args:
-        handler: The user-registered function. Receives an Event instance,
-                 must return bytes, str, or None (or something coercible to bytes).
+        handler: The user-registered function. Receives a SparkInvocation instance,
+                 and must return a SparkResponse instance.
         client:  A connected SparksClient instance.
 
     This function blocks indefinitely. It exits via sys.exit().
@@ -71,23 +70,32 @@ def run_loop(
             logger.critical("Fatal gRPC error during NextInvocation: %s", exc)
             sys.exit(1)
 
-        task_id = invocation.taskId
+        task_id_raw = getattr(invocation, "task_id", None)
+        task_id = (
+            task_id_raw.decode("utf-8", errors="replace")
+            if isinstance(task_id_raw, bytes)
+            else str(task_id_raw)
+        )
         payload = invocation.payload  # bytes
 
         # Check for poll timeout / keepalive (empty response from Go runtime)
-        if not task_id:
+        if not task_id_raw:
             logger.debug("NextInvocation poll timeout (no task received), continuing poll loop...")
             if shutdown.requested:
                 logger.info("Graceful shutdown complete.")
                 sys.exit(0)
             continue
 
-        logger.info("Invoking handler for taskId=%s (%d bytes)", task_id, len(payload))
+        logger.info("Invoking handler for task_id=%s (%d bytes)", task_id, len(payload))
 
         # ── Step 2: Execute the user handler ──────────────────────────────────
-        event = Event.from_invocation(invocation)
+        event = SparkInvocation.from_proto(invocation)
         try:
             result = handler(event)
+            if not isinstance(result, SparkResponse):
+                raise TypeError(
+                    f"Handler must return a SparkResponse instance, got {type(result).__name__}"
+                )
         except Exception:  # noqa: BLE001
             # Handler raised — capture full traceback for the error report
             exc_type, exc_value, exc_tb = sys.exc_info()
@@ -96,70 +104,47 @@ def run_loop(
             error_msg = str(exc_value)
 
             logger.error(
-                "Handler raised an exception for taskId=%s:\n%s", task_id, tb_str
+                "Handler raised an exception for task_id=%s:\n%s", task_id, tb_str
             )
+            # Emit handler error directly to stderr so it is captured on the Docker FIFO pipe
+            sys.stderr.write(f"Handler exception:\n{tb_str}\n")
+            sys.stderr.flush()
 
-            # ── Step 3b: Report error to runtime ──────────────────────────────
-            # TODO: Replace this log-only stub with client.send_error() once the
-            #       TaskError RPC is defined in the proto and implemented on the
-            #       server side.
-            #
-            # try:
-            #     client.send_error(task_id, error_type, error_msg, tb_str)
-            # except SparksConnectionError as conn_exc:
-            #     logger.critical(
-            #         "Fatal gRPC error while sending error report: %s", conn_exc
-            #     )
-            #     sys.exit(1)
-            import json
-            error_payload = json.dumps({
-                "status": "error",
-                "error_type": error_type,
-                "error_message": error_msg,
-                "traceback": tb_str,
-            }).encode("utf-8")
+            error_response = SparkResponse(
+                status_code=StatusCode.INTERNAL,
+                error_msg=f"{error_type}: {error_msg}",
+                payload=b"",
+            )
 
             try:
                 client.send_response(
-                    task_id=task_id,
-                    payload=error_payload,
-                    request_id=event.request_id,
-                    event_id=event.event_id,
+                    task_id=task_id_raw,
+                    payload=error_response.to_cbor(),
                 )
-                logger.info("Sent error response for taskId=%s", task_id)
+                logger.info("Sent error response for task_id=%s", task_id)
             except SparksConnectionError as exc:
                 logger.critical(
-                    "Fatal gRPC error while sending error response for taskId=%s: %s",
+                    "Fatal gRPC error while sending error response for task_id=%s: %s",
                     task_id,
                     exc,
                 )
                 sys.exit(1)
         else:
             # ── Step 3a: Send successful response ─────────────────────────────
-            # Coerce return value to bytes if the user returned a str
-            if isinstance(result, str):
-                result = result.encode()
-            elif result is None:
-                result = b""
-            elif not isinstance(result, (bytes, bytearray)):
-                result = str(result).encode()
-
             try:
                 client.send_response(
-                    task_id=task_id,
-                    payload=bytes(result),
-                    request_id=event.request_id,
-                    event_id=event.event_id,
+                    task_id=task_id_raw,
+                    payload=result.to_cbor(),
                 )
             except SparksConnectionError as exc:
                 logger.critical(
-                    "Fatal gRPC error while sending response for taskId=%s: %s",
+                    "Fatal gRPC error while sending response for task_id=%s: %s",
                     task_id,
                     exc,
                 )
                 sys.exit(1)
 
-            logger.info("Successfully responded to taskId=%s", task_id)
+            logger.info("Successfully responded to task_id=%s", task_id)
 
         # ── Step 4: Check for graceful shutdown ────────────────────────────────
         if shutdown.requested:

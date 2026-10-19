@@ -1,6 +1,6 @@
 [project]
 name = "anedya-sparks-runtime"
-version = "0.0.2"
+version = "0.0.3"
 description = "Anedya Sparks python runtime SDK"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -20,6 +20,8 @@ classifiers = [
 dependencies = [
     "cbor2>=5.6.0",
     "grpcio>=1.54.0",
+    "grpcio-tools>=1.84.0",
+    "pip>=26.2.1",
     "protobuf>=4.21.0",
 ]
 
